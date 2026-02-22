@@ -4,16 +4,35 @@ let transporter = null;
 
 const getTransporter = () => {
   if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: process.env.EMAIL_SERVICE || "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
+    const host = process.env.EMAIL_HOST;
+    const port = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : undefined;
+    const secure = process.env.EMAIL_SECURE === "true";
+
+    const config = host
+      ? {
+          host,
+          port: port || 587,
+          secure,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+          }
+        }
+      : {
+          service: process.env.EMAIL_SERVICE || "gmail",
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+          }
+        };
+
+    transporter = nodemailer.createTransport(config);
     console.log("📧 Email transporter initialized");
     console.log("  USER:", process.env.EMAIL_USER);
+    console.log("  HOST:", host || "(service)");
     console.log("  SERVICE:", process.env.EMAIL_SERVICE || "gmail");
+    console.log("  PORT:", port || (host ? 587 : "default"));
+    console.log("  SECURE:", secure);
   }
   return transporter;
 };
