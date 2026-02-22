@@ -54,8 +54,7 @@ const createDatabaseAndTables = async () => {
   } catch (error) {
     console.warn("⚠️  MySQL connection failed, will use CSV fallback:", error.message);
   }
-    throw error;
-  }
 };
 
 export default createDatabaseAndTables;
+
