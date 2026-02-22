@@ -49,19 +49,23 @@ const port = process.env.PORT || 4000;
 
 const initializeApp = async () => {
   try {
-    // Initialize MySQL and database
+    // Initialize MySQL (will gracefully fall back to CSV if unavailable)
     await initMysql();
-    await initDatabase();
     
-    // Initialize user store
+    // Only try to create database if MySQL is available
+    if (process.env.MYSQL_HOST && process.env.MYSQL_USER) {
+      await initDatabase();
+    }
+    
+    // Initialize user store (uses CSV or MySQL depending on availability)
     await connectDb();
     
     app.listen(port, () => {
-      console.log(`Server running on port ${port}`);
-      console.log(`Database: ${process.env.MYSQL_DB || "face_verification_db"}`);
+      console.log(`✅ Server running on port ${port}`);
+      console.log(`📦 Storage mode: ${process.env.MYSQL_HOST ? "MySQL" : "CSV"}`);
     });
   } catch (err) {
-    console.error("❌ Failed to initialize app:", err);
+    console.error("❌ Failed to initialize app:", err.message);
     process.exit(1);
   }
 };

@@ -1,6 +1,12 @@
 import mysql from "mysql2/promise";
 
 const createDatabaseAndTables = async () => {
+  // Skip MySQL if credentials are not provided
+  if (!process.env.MYSQL_HOST || !process.env.MYSQL_USER) {
+    console.log("⚠️  MySQL credentials not provided, skipping database initialization");
+    return;
+  }
+
   const connection = await mysql.createConnection({
     host: process.env.MYSQL_HOST || "localhost",
     user: process.env.MYSQL_USER || "root",

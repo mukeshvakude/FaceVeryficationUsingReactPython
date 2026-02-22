@@ -23,13 +23,12 @@ Users can then:
 #### 1. Push to GitHub
 ```bash
 cd d:/PROJECTS/securevision
-git init
 git add .
-git commit -m "Initial deployment"
-# Create repo on GitHub, then:
-git remote add origin https://github.com/YOUR_USERNAME/securevision.git
-git push -u origin main
+git commit -m "Add deployment configurations"
+git push origin main
 ```
+
+Your repo: https://github.com/mukeshvakude/FaceVeryficationUsingReactPython
 
 #### 2. Deploy Backend to Render
 - Go to https://render.com/deploy
