@@ -49,29 +49,18 @@ const port = process.env.PORT || 4000;
 
 const initializeApp = async () => {
   try {
-    // Initialize MySQL (will gracefully fall back to CSV if unavailable)
+    // Initialize MySQL pool (will gracefully fall back to CSV if unavailable)
     await initMysql();
     
-    // Only try to create database if MySQL is properly configured
-    const hasMysqlConfig = 
-      process.env.MYSQL_HOST && 
-      process.env.MYSQL_HOST.trim() &&
-      process.env.MYSQL_USER && 
-      process.env.MYSQL_USER.trim();
-    
-    if (hasMysqlConfig) {
-      console.log("📦 Initializing MySQL database...");
-      await initDatabase();
-    } else {
-      console.log("📦 MySQL not configured, using CSV storage");
-    }
+    // Database initialization will skip MySQL if not configured
+    await initDatabase();
     
     // Initialize user store (uses CSV or MySQL depending on availability)
     await connectDb();
     
     app.listen(port, () => {
       console.log(`✅ Server running on port ${port}`);
-      console.log(`📦 Storage: ${hasMysqlConfig ? "MySQL" : "CSV"}`);
+      console.log(`📦 Data storage: CSV (MySQL not configured)`);
     });
   } catch (err) {
     console.error("❌ Failed to initialize app:", err.message);

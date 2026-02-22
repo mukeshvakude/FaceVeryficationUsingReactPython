@@ -2,21 +2,18 @@ import mysql from "mysql2/promise";
 
 const createDatabaseAndTables = async () => {
   // Skip MySQL if credentials are not provided or are empty strings
-  const hasValidConfig = 
-    process.env.MYSQL_HOST && 
-    process.env.MYSQL_HOST.trim() &&
-    process.env.MYSQL_USER && 
-    process.env.MYSQL_USER.trim();
+  const host = (process.env.MYSQL_HOST || "").trim();
+  const user = (process.env.MYSQL_USER || "").trim();
   
-  if (!hasValidConfig) {
-    console.log("⚠️  MySQL credentials not provided, using CSV fallback");
-    return;
+  if (!host || !user) {
+    console.log("⚠️  MySQL not configured, skipping database initialization");
+    return Promise.resolve(); // Return resolved promise instead of just returning
   }
 
   try {
     const connection = await mysql.createConnection({
-      host: process.env.MYSQL_HOST || "localhost",
-      user: process.env.MYSQL_USER || "root",
+      host: host,
+      user: user,
       password: process.env.MYSQL_PASSWORD || "root"
     });
 
