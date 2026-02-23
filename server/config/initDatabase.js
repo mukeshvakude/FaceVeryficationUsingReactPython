@@ -62,6 +62,20 @@ const createMySQLTables = async () => {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     console.log("✅ MySQL users table ready");
+    
+    // Migration: Add faceImageData column if it doesn't exist
+    try {
+      await connection.execute(`
+        ALTER TABLE users 
+        ADD COLUMN faceImageData LONGBLOB
+      `);
+      console.log("✅ faceImageData column migration complete");
+    } catch (err) {
+      // Column likely already exists
+      if (!err.message.includes('Duplicate column')) {
+        console.warn("⚠️ Column migration failed:", err.message);
+      }
+    }
 
     await connection.end();
   } catch (error) {
@@ -107,6 +121,17 @@ const createPostgreSQLTables = async () => {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_email ON users(email)
     `);
+    
+    // Migration: Add faceImageData column if it doesn't exist
+    try {
+      await client.query(`
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS "faceImageData" BYTEA
+      `);
+      console.log("✅ faceImageData column migration complete");
+    } catch (err) {
+      console.log("⚠️ Column migration skipped:", err.message);
+    }
     
     console.log("✅ PostgreSQL users table ready");
 

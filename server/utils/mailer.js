@@ -1,5 +1,4 @@
 import nodemailer from "nodemailer";
-import dns from "dns/promises";
 
 let transporter = null;
 
@@ -9,29 +8,18 @@ const getTransporter = async () => {
     const port = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : undefined;
     const secure = process.env.EMAIL_SECURE === "true";
 
-    let resolvedHost = host;
-    
-    // Resolve hostname to IPv4 address to avoid IPv6 routing issues
-    if (host && host.includes('.')) {
-      try {
-        const addresses = await dns.resolve4(host);
-        if (addresses && addresses.length > 0) {
-          resolvedHost = addresses[0];
-          console.log(`📧 Resolved ${host} to IPv4: ${resolvedHost}`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ DNS resolution failed, using hostname: ${err.message}`);
-      }
-    }
-
-    const config = resolvedHost
+    const config = host
       ? {
-          host: resolvedHost,
+          host,
           port: port || 587,
           secure,
-          connectionTimeout: 15000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
+          connectionTimeout: 30000,
+          greetingTimeout: 30000,
+          socketTimeout: 30000,
+          tls: {
+            ciphers: 'SSLv3',
+            rejectUnauthorized: false
+          },
           auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS
