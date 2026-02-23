@@ -233,12 +233,18 @@ router.post(
       form.append("imageA", storedBuffer, "registered.jpg");
       form.append("imageB", live.buffer, live.originalname || "live.jpg");
 
+      console.log("  Calling face service:", faceUrl);
+      console.log("  Form data size:", form.getLengthSync ? form.getLengthSync() : "unknown");
+
       const verifyResponse = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
-        maxBodyLength: Infinity
+        maxBodyLength: Infinity,
+        timeout: 60000, // 60 second timeout for face verification
       });
 
+      console.log("  Face service response status:", verifyResponse.status);
       const verification = verifyResponse.data;
+      console.log("  Verification result:", verification.verified ? "PASSED" : "FAILED");
       
       // Check if face verification passed
       if (!verification?.verified) {
@@ -261,7 +267,29 @@ router.post(
         });
       }
       
+      // Handle face service unavailable (502, 503, 504)
+      if (err.response?.status === 502 || err.response?.status === 503 || err.response?.status === 504) {
+        console.error("Face service unavailable:", err.message);
+        console.error("  Service URL:", process.env.FACE_SERVICE_URL);
+        console.error("  Status:", err.response?.status);
+        return res.status(503).json({ 
+          message: "Face verification service is temporarily unavailable. Please try again in a moment.",
+          error: "Service starting up or temporarily down"
+        });
+      }
+      
+      // Handle timeout
+      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+        console.error("Face service timeout:", err.message);
+        return res.status(504).json({ 
+          message: "Face verification timed out. Please try again.",
+          error: "Request timeout"
+        });
+      }
+      
       console.error("Face decrypt error:", err.message);
+      console.error("  Error code:", err.code);
+      console.error("  Response status:", err.response?.status);
       return res.status(500).json({ 
         message: "Face decrypt failed",
         error: process.env.NODE_ENV === "development" ? err.message : undefined

@@ -37,11 +37,20 @@ router.post(
 
       const response = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
-        maxBodyLength: Infinity
+        maxBodyLength: Infinity,
+        timeout: 60000, // 60 second timeout
       });
 
       return res.json(response.data);
     } catch (err) {
+      // Handle face service unavailable
+      if (err.response?.status === 502 || err.response?.status === 503 || err.response?.status === 504) {
+        return res.status(503).json({ message: "Face verification service temporarily unavailable" });
+      }
+      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+        return res.status(504).json({ message: "Face verification timed out" });
+      }
+      console.error("Face verification error:", err.message);
       return res.status(500).json({ message: "Face verification failed" });
     }
   }
@@ -119,11 +128,20 @@ router.post(
 
       const response = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
-        maxBodyLength: Infinity
+        maxBodyLength: Infinity,
+        timeout: 60000, // 60 second timeout
       });
 
       return res.json(response.data);
     } catch (err) {
+      // Handle face service unavailable
+      if (err.response?.status === 502 || err.response?.status === 503 || err.response?.status === 504) {
+        return res.status(503).json({ message: "Face verification service temporarily unavailable" });
+      }
+      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+        return res.status(504).json({ message: "Face verification timed out" });
+      }
+      console.error("Live verification error:", err.message);
       return res.status(500).json({ message: "Live verification failed" });
     }
   }
