@@ -203,48 +203,65 @@ router.post(
         return res.status(400).json({ message: "Stego and live images required" });
       }
 
-      const user = await findUserById(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
       const faceUrl = process.env.FACE_SERVICE_URL;
       if (!faceUrl) {
         return res.status(500).json({ message: "FACE_SERVICE_URL not set" });
       }
 
-      // Try reading from database first (persistent storage)
-      let storedBuffer = await readFaceImageFromDb(user.id);
-      
-      // Fall back to file system if not in database
-      if (!storedBuffer && user.faceImagePath) {
-        try {
-          storedBuffer = await readFaceImage(user.faceImagePath);
-        } catch (err) {
-          console.error("Failed to read from file system:", err.message);
-        }
+      const user = await findUserById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
-      
-      if (!storedBuffer) {
-        return res.status(404).json({ message: "No registered face found" });
+
+      // Check if user has registered face embedding
+      if (!user.faceEmbedding) {
+        return res.status(404).json({ message: "No registered face found. Please register your face first." });
       }
+
+      let storedEmbedding;
+      try {
+        storedEmbedding = typeof user.faceEmbedding === 'string' 
+          ? JSON.parse(user.faceEmbedding) 
+          : user.faceEmbedding;
+      } catch (e) {
+        console.error("Failed to parse stored embedding:", e.message);
+        return res.status(500).json({ message: "Invalid stored embedding" });
+      }
+
+      console.log("  Getting embedding from live image...");
       
-      const form = new FormData();
-      form.append("imageA", storedBuffer, "registered.jpg");
-      form.append("imageB", live.buffer, live.originalname || "live.jpg");
+      // Get embedding from live image
+      const liveForm = new FormData();
+      liveForm.append("image", live.buffer, live.originalname || "face.jpg");
 
-      console.log("  Calling face service:", faceUrl);
-      console.log("  Form data size:", form.getLengthSync ? form.getLengthSync() : "unknown");
-
-      const verifyResponse = await axios.post(faceUrl, form, {
-        headers: form.getHeaders(),
+      const embeddingResponse = await axios.post(`${faceUrl}/get-embedding`, liveForm, {
+        headers: liveForm.getHeaders(),
         maxBodyLength: Infinity,
-        timeout: 120000, // 120 second timeout for initial model load on Render
+        timeout: 30000
       });
 
-      console.log("  Face service response status:", verifyResponse.status);
-      const verification = verifyResponse.data;
-      console.log("  Verification result:", verification.verified ? "PASSED" : "FAILED");
+      if (!embeddingResponse.data.success) {
+        return res.status(400).json({ 
+          message: "No face detected in live image. Please ensure your face is clearly visible.",
+          error: "Face detection failed"
+        });
+      }
+
+      const liveEmbedding = embeddingResponse.data.embedding;
+      console.log("  ✅ Live embedding extracted");
+
+      // Compare embeddings
+      console.log("  Comparing embeddings...");
+      
+      const comparisonResponse = await axios.post(`${faceUrl}/compare-embeddings`, {
+        embA: storedEmbedding,
+        embB: liveEmbedding
+      }, {
+        timeout: 5000
+      });
+
+      const verification = comparisonResponse.data;
+      console.log("  ✅ Verification result:", verification.verified ? "PASSED" : "FAILED");
       
       // Check if face verification passed
       if (!verification?.verified) {

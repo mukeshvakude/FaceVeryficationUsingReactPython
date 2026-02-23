@@ -57,11 +57,26 @@ const createMySQLTables = async () => {
         createdAt DATETIME NOT NULL,
         faceImagePath VARCHAR(255),
         faceImageData LONGBLOB,
+        faceEmbedding JSON,
         role VARCHAR(50) DEFAULT 'user',
         INDEX idx_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     console.log("✅ MySQL users table ready");
+    
+    // Migration: Add faceEmbedding column if it doesn't exist
+    try {
+      await connection.execute(`
+        ALTER TABLE users 
+        ADD COLUMN faceEmbedding JSON
+      `);
+      console.log("✅ faceEmbedding column migration complete");
+    } catch (err) {
+      // Column likely already exists
+      if (!err.message.includes('Duplicate column')) {
+        console.warn("⚠️ Column migration failed:", err.message);
+      }
+    }
     
     // Migration: Add faceImageData column if it doesn't exist
     try {
@@ -114,6 +129,7 @@ const createPostgreSQLTables = async () => {
         "createdAt" TIMESTAMP NOT NULL,
         "faceImagePath" VARCHAR(255),
         "faceImageData" BYTEA,
+        "faceEmbedding" JSON,
         role VARCHAR(50) DEFAULT 'user'
       )
     `);
@@ -121,6 +137,17 @@ const createPostgreSQLTables = async () => {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_email ON users(email)
     `);
+    
+    // Migration: Add faceEmbedding column if it doesn't exist
+    try {
+      await client.query(`
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS "faceEmbedding" JSON
+      `);
+      console.log("✅ faceEmbedding column migration complete");
+    } catch (err) {
+      console.log("⚠️ Column migration skipped:", err.message);
+    }
     
     // Migration: Add faceImageData column if it doesn't exist
     try {

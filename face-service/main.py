@@ -1,10 +1,28 @@
 import os
 import tempfile
+import json
+import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from deepface import DeepFace
 
 app = FastAPI()
+
+# Cache for loaded model to avoid reloading
+_model_cache = {}
+
+
+def _get_model(model_name="VGG-Face"):
+  """Get model from cache or load it"""
+  if model_name not in _model_cache:
+    try:
+      _model_cache[model_name] = DeepFace.build_model(model_name)
+      print(f"✅ Loaded {model_name} model")
+    except Exception as e:
+      print(f"❌ Failed to load {model_name}: {e}")
+      raise
+  return _model_cache[model_name]
+
 
 # Enable CORS for production
 app.add_middleware(
@@ -23,7 +41,7 @@ async def root():
     "status": "running",
     "service": "face-verification",
     "model": "VGG-Face",
-    "version": "1.0"
+    "version": "2.0"
   }
 
 
@@ -33,7 +51,8 @@ async def health():
   return {
     "status": "healthy",
     "service": "face-verification",
-    "ready": True
+    "ready": True,
+    "model_cached": "VGG-Face" in _model_cache
   }
 
 
@@ -50,8 +69,74 @@ def _save_upload(upload: UploadFile):
   return temp.name
 
 
+@app.post("/get-embedding")
+async def get_embedding(image: UploadFile = File(...)):
+  """Extract face embedding from image - fast, no comparison needed"""
+  temp_path = None
+
+  try:
+    temp_path = _save_upload(image)
+
+    # Use represent() to get embedding vector (no model building - uses cache)
+    embeddings = DeepFace.represent(
+      img_path=temp_path,
+      model_name="VGG-Face",
+      enforce_detection=True
+    )
+    
+    # DeepFace.represent returns list of dicts, get first result
+    embedding = embeddings[0]["embedding"]
+    
+    # Convert numpy array to list for JSON serialization
+    embedding_list = embedding if isinstance(embedding, list) else embedding.tolist()
+
+    return {
+      "success": True,
+      "embedding": embedding_list,
+      "model": "VGG-Face",
+      "embedding_size": len(embedding_list)
+    }
+  except ValueError as ve:
+    # Face not detected
+    raise HTTPException(status_code=400, detail=f"Face detection failed: {str(ve)}")
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=f"Embedding extraction failed: {str(exc)}")
+  finally:
+    if temp_path and os.path.exists(temp_path):
+      os.unlink(temp_path)
+
+
+@app.post("/compare-embeddings")
+async def compare_embeddings(embA: list, embB: list):
+  """Compare two embeddings using cosine distance - instant operation"""
+  try:
+    # Convert to numpy arrays
+    arr_a = np.array(embA, dtype=np.float32)
+    arr_b = np.array(embB, dtype=np.float32)
+
+    # Compute cosine distance
+    from scipy.spatial.distance import cosine
+    distance = float(cosine(arr_a, arr_b))
+    
+    # VGG-Face threshold: < 0.60 = same person, > 0.68 = different
+    threshold = 0.60
+    is_verified = distance < threshold
+    confidence = max(0.0, 1.0 - distance)
+
+    return {
+      "verified": is_verified,
+      "distance": round(distance, 4),
+      "threshold": threshold,
+      "confidence": round(confidence, 4),
+      "model": "VGG-Face"
+    }
+  except Exception as exc:
+    raise HTTPException(status_code=500, detail=f"Comparison failed: {str(exc)}")
+
+
 @app.post("/verify-face")
 async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(...)):
+  """Legacy endpoint: Compare two images directly (slow, for backward compatibility)"""
   temp_a = None
   temp_b = None
 
@@ -64,7 +149,7 @@ async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(
     result = DeepFace.verify(
       img1_path=temp_a, 
       img2_path=temp_b, 
-      model_name="VGG-Face",  # Changed from Facenet512 for lower memory usage
+      model_name="VGG-Face",
       distance_metric="cosine",
       enforce_detection=True
     )
