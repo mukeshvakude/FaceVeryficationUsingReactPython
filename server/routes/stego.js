@@ -239,7 +239,7 @@ router.post(
       const verifyResponse = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
         maxBodyLength: Infinity,
-        timeout: 60000, // 60 second timeout for face verification
+        timeout: 120000, // 120 second timeout for initial model load on Render
       });
 
       console.log("  Face service response status:", verifyResponse.status);
@@ -282,7 +282,7 @@ router.post(
       if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
         console.error("Face service timeout:", err.message);
         return res.status(504).json({ 
-          message: "Face verification timed out. Please try again.",
+          message: "Face verification timed out. The service may be starting up. Please try again in a moment.",
           error: "Request timeout"
         });
       }

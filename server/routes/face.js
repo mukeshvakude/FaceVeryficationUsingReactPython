@@ -38,7 +38,7 @@ router.post(
       const response = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
         maxBodyLength: Infinity,
-        timeout: 60000, // 60 second timeout
+        timeout: 120000, // 120 second timeout for initial model load on Render,
       });
 
       return res.json(response.data);
@@ -129,7 +129,7 @@ router.post(
       const response = await axios.post(faceUrl, form, {
         headers: form.getHeaders(),
         maxBodyLength: Infinity,
-        timeout: 60000, // 60 second timeout
+        timeout: 120000, // 120 second timeout for initial model load on Render,
       });
 
       return res.json(response.data);
@@ -139,7 +139,7 @@ router.post(
         return res.status(503).json({ message: "Face verification service temporarily unavailable" });
       }
       if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-        return res.status(504).json({ message: "Face verification timed out" });
+        return res.status(504).json({ message: "Face verification timed out - service may be starting up. Please try again in a moment." });
       }
       console.error("Live verification error:", err.message);
       return res.status(500).json({ message: "Live verification failed" });

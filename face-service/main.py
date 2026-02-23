@@ -16,6 +16,27 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+async def root():
+  """Health check endpoint"""
+  return {
+    "status": "running",
+    "service": "face-verification",
+    "model": "VGG-Face",
+    "version": "1.0"
+  }
+
+
+@app.get("/health")
+async def health():
+  """Detailed health check"""
+  return {
+    "status": "healthy",
+    "service": "face-verification",
+    "ready": True
+  }
+
+
 def _save_upload(upload: UploadFile):
   if not upload.content_type or not upload.content_type.startswith("image/"):
     raise HTTPException(status_code=400, detail="Invalid image type")
@@ -38,20 +59,21 @@ async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(
     temp_a = _save_upload(imageA)
     temp_b = _save_upload(imageB)
 
-    # Use cosine distance model with stricter threshold for better security
+    # Use VGG-Face model - lighter than Facenet512, better for low-memory environments
+    # Facenet512 can use 500MB+ RAM, VGG-Face uses ~150MB
     result = DeepFace.verify(
       img1_path=temp_a, 
       img2_path=temp_b, 
-      model_name="Facenet512",
+      model_name="VGG-Face",  # Changed from Facenet512 for lower memory usage
       distance_metric="cosine",
       enforce_detection=True
     )
     distance = float(result.get("distance", 0.0))
-    threshold = float(result.get("threshold", 0.4))  # Default threshold
+    threshold = float(result.get("threshold", 0.68))  # VGG-Face default threshold
     
-    # For Facenet512 with cosine, distance < 0.3 is same person, > 0.4 is different
-    # We use 0.35 as a stricter threshold for security
-    strict_threshold = 0.35
+    # For VGG-Face with cosine, distance < 0.55 is same person, > 0.68 is different
+    # We use 0.60 as a balanced threshold for security and usability
+    strict_threshold = 0.60
     is_verified = distance < strict_threshold
     
     confidence = max(0.0, 1.0 - distance)
@@ -61,7 +83,8 @@ async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(
       "distance": round(distance, 4),
       "threshold": strict_threshold,
       "model_threshold": threshold,
-      "confidence": round(confidence, 4)
+      "confidence": round(confidence, 4),
+      "model": "VGG-Face"
     }
   except ValueError as ve:
     # Face not detected
