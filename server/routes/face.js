@@ -4,7 +4,7 @@ import FormData from "form-data";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { findUserById, updateUserFacePath } from "../utils/userStore.js";
-import { readFaceImage, saveFaceImage } from "../utils/faceStorage.js";
+import { readFaceImage, readFaceImageFromDb, saveFaceImage, saveFaceImageToDb } from "../utils/faceStorage.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -58,12 +58,16 @@ router.post(
         return res.status(400).json({ message: "Image required" });
       }
 
+      // Save to file system (fallback)
       const storedPath = await saveFaceImage(req.user.id, image);
       const updated = await updateUserFacePath(req.user.id, storedPath);
 
       if (!updated) {
         return res.status(404).json({ message: "User not found" });
       }
+      
+      // Save to database (persistent storage)
+      await saveFaceImageToDb(req.user.id, image.buffer);
 
       return res.json({ message: "Face registered" });
     } catch (err) {
@@ -84,11 +88,25 @@ router.post(
       }
 
       const user = await findUserById(req.user.id);
-      if (!user || !user.faceImagePath) {
-        return res.status(404).json({ message: "No registered face found" });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
 
-      const storedBuffer = await readFaceImage(user.faceImagePath);
+      // Try reading from database first (persistent storage)
+      let storedBuffer = await readFaceImageFromDb(user.id);
+      
+      // Fall back to file system if not in database
+      if (!storedBuffer && user.faceImagePath) {
+        try {
+          storedBuffer = await readFaceImage(user.faceImagePath);
+        } catch (err) {
+          console.error("Failed to read from file system:", err.message);
+        }
+      }
+      
+      if (!storedBuffer) {
+        return res.status(404).json({ message: "No registered face found" });
+      }
 
       const faceUrl = process.env.FACE_SERVICE_URL;
       if (!faceUrl) {

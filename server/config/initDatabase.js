@@ -56,6 +56,7 @@ const createMySQLTables = async () => {
         passwordHash VARCHAR(255) NOT NULL,
         createdAt DATETIME NOT NULL,
         faceImagePath VARCHAR(255),
+        faceImageData LONGBLOB,
         role VARCHAR(50) DEFAULT 'user',
         INDEX idx_email (email)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -98,6 +99,7 @@ const createPostgreSQLTables = async () => {
         "passwordHash" VARCHAR(255) NOT NULL,
         "createdAt" TIMESTAMP NOT NULL,
         "faceImagePath" VARCHAR(255),
+        "faceImageData" BYTEA,
         role VARCHAR(50) DEFAULT 'user'
       )
     `);

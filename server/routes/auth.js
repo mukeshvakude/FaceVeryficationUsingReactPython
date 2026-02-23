@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import express from "express";
 import jwt from "jsonwebtoken";
 import multer from "multer";
-import { saveFaceImage } from "../utils/faceStorage.js";
+import { saveFaceImage, saveFaceImageToDb } from "../utils/faceStorage.js";
 import { createUser, findUserByEmail, updateUserFacePath, listUsers } from "../utils/userStore.js";
 
 const router = express.Router();
@@ -62,8 +62,12 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
     const user = await createUser({ name, email, passwordHash, role });
     console.log(`   Created user ID: ${user.id}`);
 
+    // Save face image to file system (fallback)
     const storedPath = await saveFaceImage(user.id, image);
     await updateUserFacePath(user.id, storedPath);
+    
+    // Save face image to database (persistent storage for production)
+    await saveFaceImageToDb(user.id, image.buffer);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },

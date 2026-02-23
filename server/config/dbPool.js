@@ -70,7 +70,8 @@ export const getConnection = async () => {
         ...row,
         passwordHash: row.passwordhash || row.passwordHash,
         createdAt: row.createdat || row.createdAt,
-        faceImagePath: row.faceimagepath || row.faceImagePath
+        faceImagePath: row.faceimagepath || row.faceImagePath,
+        faceImageData: row.faceimagedata || row.faceImageData
       };
     };
     

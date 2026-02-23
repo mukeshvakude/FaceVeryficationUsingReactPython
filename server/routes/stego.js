@@ -6,7 +6,7 @@ import multer from "multer";
 import sharp from "sharp";
 import { requireAuth } from "../middleware/auth.js";
 import { encryptText, decryptText } from "../utils/crypto.js";
-import { readFaceImage } from "../utils/faceStorage.js";
+import { readFaceImage, readFaceImageFromDb } from "../utils/faceStorage.js";
 import { decodeStego, encodeStego } from "../utils/stego.js";
 import { findUserById } from "../utils/userStore.js";
 import { sendStegoEmail } from "../utils/mailer.js";
@@ -204,8 +204,8 @@ router.post(
       }
 
       const user = await findUserById(req.user.id);
-      if (!user || !user.faceImagePath) {
-        return res.status(404).json({ message: "No registered face found" });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
       }
 
       const faceUrl = process.env.FACE_SERVICE_URL;
@@ -213,7 +213,22 @@ router.post(
         return res.status(500).json({ message: "FACE_SERVICE_URL not set" });
       }
 
-      const storedBuffer = await readFaceImage(user.faceImagePath);
+      // Try reading from database first (persistent storage)
+      let storedBuffer = await readFaceImageFromDb(user.id);
+      
+      // Fall back to file system if not in database
+      if (!storedBuffer && user.faceImagePath) {
+        try {
+          storedBuffer = await readFaceImage(user.faceImagePath);
+        } catch (err) {
+          console.error("Failed to read from file system:", err.message);
+        }
+      }
+      
+      if (!storedBuffer) {
+        return res.status(404).json({ message: "No registered face found" });
+      }
+      
       const form = new FormData();
       form.append("imageA", storedBuffer, "registered.jpg");
       form.append("imageB", live.buffer, live.originalname || "live.jpg");
