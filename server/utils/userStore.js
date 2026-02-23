@@ -151,12 +151,18 @@ const writeUsers = async (filePath, users) => {
 export const initUserStore = async () => {
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
-      await connection.release();
+      const dbType = getDbType();
+      if (dbType === 'mysql') {
+        const connection = await pool.getConnection();
+        await connection.release();
+      } else if (dbType === 'postgresql') {
+        const client = await pool.connect();
+        await client.release();
+      }
       console.log("✅ User store initialized with Database");
       return;
     } catch (error) {
-      console.error("❌ Database init failed, using CSV fallback");
+      console.error("❌ Database init failed, using CSV fallback:", error.message);
       dbAvailable = false;
     }
   }
