@@ -3,7 +3,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import { saveFaceImage } from "../utils/faceStorage.js";
-import { createUser, findUserByEmail, updateUserFacePath } from "../utils/userStore.js";
+import { createUser, findUserByEmail, updateUserFacePath, listUsers } from "../utils/userStore.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -84,13 +84,17 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Missing fields" });
     }
 
+    console.log(`🔑 Login attempt for: ${email}`);
     const user = await findUserByEmail(email);
     if (!user) {
+      console.log(`❌ User not found: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    console.log(`✅ User found: ${user.name} (${user.email})`);
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
+      console.log(`❌ Invalid password for: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -100,12 +104,32 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    console.log(`✅ Login successful: ${user.name}`);
     return res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err) {
+    console.error("❌ Login error:", err);
     return res.status(500).json({ message: "Login failed" });
+  }
+});
+
+// Debug endpoint to view all registered users (remove in production)
+router.get("/users/debug", async (req, res) => {
+  try {
+    const users = await listUsers();
+    const userList = users.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      createdAt: u.createdAt,
+      hasFaceImage: !!u.faceImagePath
+    }));
+    return res.json({ count: users.length, users: userList });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

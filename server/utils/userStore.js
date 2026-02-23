@@ -266,6 +266,11 @@ export const createUser = async ({ name, email, passwordHash, role = "user" }) =
   users.push(user);
   await writeUsers(filePath, users);
   console.log("✅ User created in CSV");
+  console.log(`   ID: ${user.id}`);
+  console.log(`   Name: ${user.name}`);
+  console.log(`   Email: ${user.email}`);
+  console.log(`   Role: ${user.role}`);
+  console.log(`   Total users in CSV: ${users.length}`);
   return user;
 };
 
