@@ -1,6 +1,12 @@
 import nodemailer from "nodemailer";
+import dns from "dns";
 
 let transporter = null;
+
+// Custom DNS lookup that forces IPv4
+const customLookup = (hostname, options, callback) => {
+  dns.lookup(hostname, { family: 4 }, callback);
+};
 
 const getTransporter = () => {
   if (!transporter) {
@@ -13,7 +19,7 @@ const getTransporter = () => {
           host,
           port: port || 587,
           secure,
-          family: 4, // Force IPv4 to avoid Render IPv6 routing issues
+          lookup: customLookup, // Force IPv4 DNS resolution
           connectionTimeout: 15000,
           greetingTimeout: 10000,
           socketTimeout: 15000,
