@@ -62,13 +62,27 @@ export const getConnection = async () => {
     return await pool.getConnection();
   } else if (DB_TYPE === 'postgresql') {
     const client = await pool.connect();
+    
+    // Map PostgreSQL lowercase columns to camelCase for JavaScript
+    const mapRowKeys = (row) => {
+      if (!row) return row;
+      return {
+        ...row,
+        passwordHash: row.passwordhash || row.passwordHash,
+        createdAt: row.createdat || row.createdAt,
+        faceImagePath: row.faceimagepath || row.faceImagePath
+      };
+    };
+    
     // Wrap execute method to match mysql2 interface
     client.execute = async (query, params) => {
       let pgQuery = query;
       let paramIndex = 1;
       pgQuery = pgQuery.replace(/\?/g, () => `$${paramIndex++}`);
       const result = await client.query(pgQuery, params);
-      return [result.rows];
+      // Map lowercase column names to camelCase
+      const mappedRows = result.rows.map(mapRowKeys);
+      return [mappedRows];
     };
     return client;
   }

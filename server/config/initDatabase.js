@@ -95,9 +95,9 @@ const createPostgreSQLTables = async () => {
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        passwordHash VARCHAR(255) NOT NULL,
-        createdAt TIMESTAMP NOT NULL,
-        faceImagePath VARCHAR(255),
+        "passwordHash" VARCHAR(255) NOT NULL,
+        "createdAt" TIMESTAMP NOT NULL,
+        "faceImagePath" VARCHAR(255),
         role VARCHAR(50) DEFAULT 'user'
       )
     `);
