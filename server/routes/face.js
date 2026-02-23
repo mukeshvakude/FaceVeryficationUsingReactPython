@@ -240,3 +240,5 @@ async function updateUserEmbedding(userId, embedding) {
     throw err;
   }
 }
+
+export default router;
