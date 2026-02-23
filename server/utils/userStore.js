@@ -153,7 +153,7 @@ export const initUserStore = async () => {
     try {
       const dbType = getDbType();
       if (dbType === 'mysql') {
-        const connection = await pool.getConnection();
+        const connection = await getConnection();
         await connection.release();
       } else if (dbType === 'postgresql') {
         const client = await pool.connect();
@@ -191,7 +191,7 @@ export const findUserByEmail = async (email) => {
 
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
+      const connection = await getConnection();
       const [rows] = await connection.execute(
         "SELECT * FROM users WHERE LOWER(email) = ?",
         [emailLower]
@@ -216,7 +216,7 @@ export const findUserByEmail = async (email) => {
 export const findUserById = async (id) => {
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
+      const connection = await getConnection();
       const [rows] = await connection.execute(
         "SELECT * FROM users WHERE id = ?",
         [id]
@@ -253,7 +253,7 @@ export const createUser = async ({ name, email, passwordHash, role = "user" }) =
 
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
+      const connection = await getConnection();
       const DatabaseDateTime = toDbDateTime(now);
       await connection.execute(
         "INSERT INTO users (id, name, email, passwordHash, createdAt, faceImagePath, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -285,7 +285,7 @@ export const createUser = async ({ name, email, passwordHash, role = "user" }) =
 export const updateUserFacePath = async (id, faceImagePath) => {
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
+      const connection = await getConnection();
       await connection.execute(
         "UPDATE users SET faceImagePath = ? WHERE id = ?",
         [faceImagePath, id]
@@ -322,7 +322,7 @@ export const updateUserFacePath = async (id, faceImagePath) => {
 export const listUsers = async () => {
   if (dbAvailable) {
     try {
-      const connection = await pool.getConnection();
+      const connection = await getConnection();
       const [rows] = await connection.execute("SELECT * FROM users");
       connection.release();
       return rows;
