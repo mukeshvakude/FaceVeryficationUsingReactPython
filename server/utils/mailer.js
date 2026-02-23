@@ -1,25 +1,34 @@
 import nodemailer from "nodemailer";
-import dns from "dns";
+import dns from "dns/promises";
 
 let transporter = null;
 
-// Custom DNS lookup that forces IPv4
-const customLookup = (hostname, options, callback) => {
-  dns.lookup(hostname, { family: 4 }, callback);
-};
-
-const getTransporter = () => {
+const getTransporter = async () => {
   if (!transporter) {
     const host = process.env.EMAIL_HOST;
     const port = process.env.EMAIL_PORT ? Number(process.env.EMAIL_PORT) : undefined;
     const secure = process.env.EMAIL_SECURE === "true";
 
-    const config = host
+    let resolvedHost = host;
+    
+    // Resolve hostname to IPv4 address to avoid IPv6 routing issues
+    if (host && host.includes('.')) {
+      try {
+        const addresses = await dns.resolve4(host);
+        if (addresses && addresses.length > 0) {
+          resolvedHost = addresses[0];
+          console.log(`📧 Resolved ${host} to IPv4: ${resolvedHost}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ DNS resolution failed, using hostname: ${err.message}`);
+      }
+    }
+
+    const config = resolvedHost
       ? {
-          host,
+          host: resolvedHost,
           port: port || 587,
           secure,
-          lookup: customLookup, // Force IPv4 DNS resolution
           connectionTimeout: 15000,
           greetingTimeout: 10000,
           socketTimeout: 15000,
@@ -91,7 +100,8 @@ export const sendStegoEmail = async (recipientEmail, encryptionKey, imageBuffer,
       ]
     };
 
-    const info = await getTransporter().sendMail(mailOptions);
+    const transporter = await getTransporter();
+    const info = await transporter.sendMail(mailOptions);
     console.log("✉️  Email sent successfully:", info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (err) {
