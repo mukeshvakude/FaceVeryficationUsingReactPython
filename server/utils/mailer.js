@@ -13,6 +13,10 @@ const getTransporter = () => {
           host,
           port: port || 587,
           secure,
+          family: 4, // Force IPv4 to avoid Render IPv6 routing issues
+          connectionTimeout: 15000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000,
           auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS
