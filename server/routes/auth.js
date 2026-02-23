@@ -57,7 +57,10 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase();
     const role = adminEmail && adminEmail === email.toLowerCase() ? "admin" : "user";
+    console.log(`📝 Creating user: ${email}`);
+    console.log(`   passwordHash length: ${passwordHash.length}`);
     const user = await createUser({ name, email, passwordHash, role });
+    console.log(`   Created user ID: ${user.id}`);
 
     const storedPath = await saveFaceImage(user.id, image);
     await updateUserFacePath(user.id, storedPath);
@@ -92,6 +95,16 @@ router.post("/login", async (req, res) => {
     }
 
     console.log(`✅ User found: ${user.name} (${user.email})`);
+    console.log(`   passwordHash type: ${typeof user.passwordHash}`);
+    console.log(`   passwordHash length: ${user.passwordHash?.length || 'undefined'}`);
+    
+    if (!user.passwordHash) {
+      console.error(`❌ CRITICAL: User passwordHash is missing!`);
+      console.log(`   User object keys:`, Object.keys(user));
+      console.log(`   User object:`, user);
+      return res.status(500).json({ message: "Login failed - user data corrupted" });
+    }
+    
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       console.log(`❌ Invalid password for: ${email}`);
