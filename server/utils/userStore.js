@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
-import pool from "../config/mysql.js";
+import pool, { getConnection, getDbType } from "../config/dbPool.js";
 
 const headerColumns = [
   "id",
@@ -14,23 +14,24 @@ const headerColumns = [
 ];
 const header = headerColumns.join(",");
 
-let mysqlAvailable = false;
+let dbAvailable = false;
 
-// Helper function to convert ISO datetime to MySQL format
-const toMySQLDateTime = (isoString) => {
+// Helper function to convert ISO datetime to Database/PostgreSQL format
+const toDbDateTime = (isoString) => {
   return isoString.split('.')[0].replace('T', ' ');
 };
 
-// Check MySQL availability on startup
-export const initMysql = async () => {
+// Check database availability on startup
+export const initDb = async () => {
   try {
-    const connection = await pool.getConnection();
+    const connection = await getConnection();
     connection.release();
-    mysqlAvailable = true;
-    console.log("✅ MySQL connection successful");
+    dbAvailable = true;
+    const dbType = getDbType();
+    console.log(`✅ ${dbType.toUpperCase()} connection successful`);
   } catch (error) {
-    console.warn("⚠️ MySQL unavailable, falling back to CSV storage:", error.message);
-    mysqlAvailable = false;
+    console.warn("⚠️ Database unavailable, falling back to CSV storage:", error.message);
+    dbAvailable = false;
   }
 };
 
@@ -148,15 +149,15 @@ const writeUsers = async (filePath, users) => {
 };
 
 export const initUserStore = async () => {
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
       await connection.release();
-      console.log("✅ User store initialized with MySQL");
+      console.log("✅ User store initialized with Database");
       return;
     } catch (error) {
-      console.error("❌ MySQL init failed, using CSV fallback");
-      mysqlAvailable = false;
+      console.error("❌ Database init failed, using CSV fallback");
+      dbAvailable = false;
     }
   }
 
@@ -178,11 +179,11 @@ export const initUserStore = async () => {
   }
 };
 
-// Find user by email - checks MySQL first, then CSV
+// Find user by email - checks Database first, then CSV
 export const findUserByEmail = async (email) => {
   const emailLower = email.toLowerCase();
 
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
       const [rows] = await connection.execute(
@@ -195,8 +196,8 @@ export const findUserByEmail = async (email) => {
         return rows[0];
       }
     } catch (error) {
-      console.warn("⚠️ MySQL query failed, checking CSV:", error.message);
-      mysqlAvailable = false;
+      console.warn("⚠️ Database query failed, checking CSV:", error.message);
+      dbAvailable = false;
     }
   }
 
@@ -205,9 +206,9 @@ export const findUserByEmail = async (email) => {
   return users.find((user) => user.email === emailLower) || null;
 };
 
-// Find user by ID - checks MySQL first, then CSV
+// Find user by ID - checks Database first, then CSV
 export const findUserById = async (id) => {
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
       const [rows] = await connection.execute(
@@ -220,8 +221,8 @@ export const findUserById = async (id) => {
         return rows[0];
       }
     } catch (error) {
-      console.warn("⚠️ MySQL query failed, checking CSV:", error.message);
-      mysqlAvailable = false;
+      console.warn("⚠️ Database query failed, checking CSV:", error.message);
+      dbAvailable = false;
     }
   }
 
@@ -230,7 +231,7 @@ export const findUserById = async (id) => {
   return users.find((user) => user.id === id) || null;
 };
 
-// Create user - saves to MySQL and CSV
+// Create user - saves to Database and CSV
 export const createUser = async ({ name, email, passwordHash, role = "user" }) => {
   const emailLower = email.toLowerCase();
   const now = new Date().toISOString();
@@ -244,20 +245,20 @@ export const createUser = async ({ name, email, passwordHash, role = "user" }) =
     role
   };
 
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
-      const mysqlDateTime = toMySQLDateTime(now);
+      const DatabaseDateTime = toDbDateTime(now);
       await connection.execute(
         "INSERT INTO users (id, name, email, passwordHash, createdAt, faceImagePath, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [user.id, user.name, user.email, user.passwordHash, mysqlDateTime, user.faceImagePath, user.role]
+        [user.id, user.name, user.email, user.passwordHash, DatabaseDateTime, user.faceImagePath, user.role]
       );
       connection.release();
-      console.log("✅ User created in MySQL");
+      console.log("✅ User created in Database");
       return user;
     } catch (error) {
-      console.warn("⚠️ MySQL insert failed, saving to CSV:", error.message);
-      mysqlAvailable = false;
+      console.warn("⚠️ Database insert failed, saving to CSV:", error.message);
+      dbAvailable = false;
     }
   }
 
@@ -274,9 +275,9 @@ export const createUser = async ({ name, email, passwordHash, role = "user" }) =
   return user;
 };
 
-// Update user face path - updates MySQL and CSV
+// Update user face path - updates Database and CSV
 export const updateUserFacePath = async (id, faceImagePath) => {
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
       await connection.execute(
@@ -293,8 +294,8 @@ export const updateUserFacePath = async (id, faceImagePath) => {
         return rows[0];
       }
     } catch (error) {
-      console.warn("⚠️ MySQL update failed, updating CSV:", error.message);
-      mysqlAvailable = false;
+      console.warn("⚠️ Database update failed, updating CSV:", error.message);
+      dbAvailable = false;
     }
   }
 
@@ -311,17 +312,17 @@ export const updateUserFacePath = async (id, faceImagePath) => {
   return users[index];
 };
 
-// List all users - reads from MySQL, falls back to CSV
+// List all users - reads from Database, falls back to CSV
 export const listUsers = async () => {
-  if (mysqlAvailable) {
+  if (dbAvailable) {
     try {
       const connection = await pool.getConnection();
       const [rows] = await connection.execute("SELECT * FROM users");
       connection.release();
       return rows;
     } catch (error) {
-      console.warn("⚠️ MySQL query failed, reading CSV:", error.message);
-      mysqlAvailable = false;
+      console.warn("⚠️ Database query failed, reading CSV:", error.message);
+      dbAvailable = false;
     }
   }
 

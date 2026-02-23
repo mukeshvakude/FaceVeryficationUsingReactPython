@@ -1,55 +1,116 @@
 import mysql from "mysql2/promise";
+import pg from "pg";
+import { getDbType } from "./dbPool.js";
+
+const { Client } = pg;
 
 const createDatabaseAndTables = async () => {
-  // Skip MySQL if credentials are not provided or are empty strings
+  // Check if Database is configured
+  const hasMySQL = (process.env.MYSQL_HOST || "").trim();
+  const hasPostgreSQL = (process.env.DATABASE_HOST || process.env.DB_HOST || "").trim();
+  
+  if (!hasMySQL && !hasPostgreSQL) {
+    console.log("⚠️  No database configured, using CSV storage");
+    return Promise.resolve();
+  }
+
+  const dbType = getDbType();
+  
+  if (dbType === 'mysql') {
+    await createMySQLTables();
+  } else if (dbType === 'postgresql') {
+    await createPostgreSQLTables();
+  }
+};
+
+const createMySQLTables = async () => {
   const host = (process.env.MYSQL_HOST || "").trim();
   const user = (process.env.MYSQL_USER || "").trim();
   
   if (!host || !user) {
-    console.log("⚠️  MySQL not configured, skipping database initialization");
-    return Promise.resolve(); // Return resolved promise instead of just returning
+    console.log("⚠️  MySQL not configured");
+    return;
   }
 
   try {
     const connection = await mysql.createConnection({
       host: host,
       user: user,
-      password: process.env.MYSQL_PASSWORD || "root"
+      password: process.env.MYSQL_PASSWORD || "root",
+      ssl: host.includes('psdb.cloud') ? { rejectUnauthorized: true } : undefined
     });
 
-    try {
-      // Create database if not exists
-      const dbName = process.env.MYSQL_DB || "face_verification_db";
-      await connection.execute(
-        `CREATE DATABASE IF NOT EXISTS \`${dbName}\``
-      );
-      console.log(`✅ Database '${dbName}' ready`);
+    const dbName = process.env.MYSQL_DB || "face_verification_db";
+    await connection.execute(
+      `CREATE DATABASE IF NOT EXISTS \`${dbName}\``
+    );
+    console.log(`✅ Database '${dbName}' ready`);
 
-      // Switch to database
-      await connection.changeUser({ database: dbName });
+    await connection.changeUser({ database: dbName });
 
-      // Create users table
-      await connection.execute(`
-        CREATE TABLE IF NOT EXISTS users (
-          id VARCHAR(36) PRIMARY KEY,
-          name VARCHAR(255) NOT NULL,
-          email VARCHAR(255) UNIQUE NOT NULL,
-          passwordHash VARCHAR(255) NOT NULL,
-          createdAt DATETIME NOT NULL,
-          faceImagePath VARCHAR(255),
-          role VARCHAR(50) DEFAULT 'user',
-          INDEX idx_email (email)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-      `);
-      console.log("✅ Users table ready");
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        passwordHash VARCHAR(255) NOT NULL,
+        createdAt DATETIME NOT NULL,
+        faceImagePath VARCHAR(255),
+        role VARCHAR(50) DEFAULT 'user',
+        INDEX idx_email (email)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    console.log("✅ MySQL users table ready");
 
-      await connection.end();
-    } catch (error) {
-      console.error("❌ Database initialization failed:", error.message);
-      throw error;
-    }
+    await connection.end();
   } catch (error) {
-    console.warn("⚠️  MySQL connection failed, will use CSV fallback:", error.message);
+    console.warn("⚠️  MySQL initialization failed:", error.message);
+  }
+};
+
+const createPostgreSQLTables = async () => {
+  const host = process.env.DATABASE_HOST || process.env.DB_HOST || process.env.POSTGRES_HOST;
+  const user = process.env.DATABASE_USERNAME || process.env.DB_USER || process.env.POSTGRES_USER;
+  
+  if (!host || !user) {
+    console.log("⚠️  PostgreSQL not configured");
+    return;
+  }
+
+  try {
+    const client = new Client({
+      host: host,
+      port: parseInt(process.env.DATABASE_PORT || process.env.DB_PORT || process.env.POSTGRES_PORT || '5432'),
+      user: user,
+      password: process.env.DATABASE_PASSWORD || process.env.DB_PASS || process.env.POSTGRES_PASSWORD,
+      database: process.env.DATABASE_NAME || process.env.DB_NAME || process.env.POSTGRES_DB || 'postgres',
+      ssl: { rejectUnauthorized: false }
+    });
+
+    await client.connect();
+    console.log(`✅ Connected to PostgreSQL`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        passwordHash VARCHAR(255) NOT NULL,
+        createdAt TIMESTAMP NOT NULL,
+        faceImagePath VARCHAR(255),
+        role VARCHAR(50) DEFAULT 'user'
+      )
+    `);
+    
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_email ON users(email)
+    `);
+    
+    console.log("✅ PostgreSQL users table ready");
+
+    await client.end();
+  } catch (error) {
+    console.warn("⚠️  PostgreSQL initialization failed:", error.message);
   }
 };
 

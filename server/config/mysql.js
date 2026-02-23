@@ -7,7 +7,8 @@ const pool = mysql.createPool({
   database: process.env.MYSQL_DB || "face_verification_db",
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  ssl: process.env.MYSQL_HOST?.includes('psdb.cloud') ? { rejectUnauthorized: true } : undefined
 });
 
 export default pool;

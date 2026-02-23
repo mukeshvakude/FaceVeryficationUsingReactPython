@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import { connectDb } from "./config/db.js";
 import initDatabase from "./config/initDatabase.js";
-import { initMysql } from "./utils/userStore.js";
+import { initDb } from "./utils/userStore.js";
 import authRoutes from "./routes/auth.js";
 import stegoRoutes from "./routes/stego.js";
 import faceRoutes from "./routes/face.js";
@@ -49,13 +49,13 @@ const port = process.env.PORT || 4000;
 
 const initializeApp = async () => {
   try {
-    // Initialize MySQL pool (will gracefully fall back to CSV if unavailable)
-    await initMysql();
+    // Initialize database pool (will gracefully fall back to CSV if unavailable)
+    await initDb();
     
-    // Database initialization will skip MySQL if not configured
+    // Database initialization will skip if not configured
     await initDatabase();
     
-    // Initialize user store (uses CSV or MySQL depending on availability)
+    // Initialize user store (uses CSV or database depending on availability)
     await connectDb();
     
     app.listen(port, () => {
