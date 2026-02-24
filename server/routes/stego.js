@@ -5,6 +5,7 @@ import FormData from "form-data";
 import multer from "multer";
 import sharp from "sharp";
 import { requireAuth } from "../middleware/auth.js";
+import pool, { getDbType } from "../config/dbPool.js";
 import { encryptText, decryptText } from "../utils/crypto.js";
 import { readFaceImage, readFaceImageFromDb } from "../utils/faceStorage.js";
 import { decodeStego, encodeStego } from "../utils/stego.js";
@@ -17,6 +18,20 @@ const upload = multer({ storage: multer.memoryStorage() });
 const getFaceServiceBaseUrl = () => {
   const raw = process.env.FACE_SERVICE_URL || "http://localhost:5001";
   return raw.replace(/\/verify-face\/?$/, "");
+};
+
+const updateUserEmbedding = async (userId, embedding) => {
+  const dbType = getDbType();
+  const params = [JSON.stringify(embedding), userId];
+  const query = dbType === "postgresql"
+    ? "UPDATE users SET \"faceEmbedding\" = $1 WHERE id = $2"
+    : "UPDATE users SET faceEmbedding = ? WHERE id = ?";
+
+  const result = await pool.query(query, params);
+  const affected = result?.affectedRows || result?.rowCount || 0;
+  if (affected === 0) {
+    throw new Error("Failed to save face embedding");
+  }
 };
 
 const collectImages = (files) => {
@@ -218,7 +233,37 @@ router.post(
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Check if user has registered face embedding
+      // Backfill embedding from stored face image if missing
+      if (!user.faceEmbedding) {
+        let storedBuffer = await readFaceImageFromDb(user.id);
+
+        if (!storedBuffer && user.faceImagePath) {
+          try {
+            storedBuffer = await readFaceImage(user.faceImagePath);
+          } catch (err) {
+            console.error("Failed to read from file system:", err.message);
+          }
+        }
+
+        if (storedBuffer) {
+          console.log("  Backfilling face embedding from stored image...");
+          const backfillForm = new FormData();
+          backfillForm.append("image", storedBuffer, "registered.jpg");
+
+          const backfillResponse = await axios.post(`${faceUrl}/get-embedding`, backfillForm, {
+            headers: backfillForm.getHeaders(),
+            maxBodyLength: Infinity,
+            timeout: 30000
+          });
+
+          if (backfillResponse.data?.success) {
+            await updateUserEmbedding(user.id, backfillResponse.data.embedding);
+            user.faceEmbedding = backfillResponse.data.embedding;
+            console.log("  ✅ Face embedding backfilled");
+          }
+        }
+      }
+
       if (!user.faceEmbedding) {
         return res.status(404).json({ message: "No registered face found. Please register your face first." });
       }
