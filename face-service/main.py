@@ -26,14 +26,8 @@ app.add_middleware(
 
 # MediaPipe Face Detection
 mp_face_detection = mp.solutions.face_detection
-mp_face_mesh = mp.solutions.face_mesh
 face_detection = mp_face_detection.FaceDetection(
     model_selection=1,  # 1 = full range
-    min_detection_confidence=0.5
-)
-face_mesh = mp_face_mesh.FaceMesh(
-    static_image_mode=True,
-    max_num_faces=1,
     min_detection_confidence=0.5
 )
 
@@ -82,27 +76,34 @@ def _extract_face_region(image):
   return face_normalized
 
 def _face_region_to_embedding(face_region):
-  """Convert face region to embedding using facial landmarks"""
+  """Convert face region to embedding using pixel features + histogram"""
   if face_region is None:
     raise ValueError("No face region")
   
-  # Get face landmarks
-  rgb_image = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
-  results = face_mesh.process(rgb_image)
+  # Convert to grayscale
+  gray = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
   
-  if not results.multi_face_landmarks or len(results.multi_face_landmarks) == 0:
-    raise ValueError("No face landmarks detected")
+  # Resize to consistent size (64x64 for speed)
+  resized = cv2.resize(gray, (64, 64), interpolation=cv2.INTER_AREA)
   
-  # Get landmarks (468 points, 3D coordinates)
-  landmarks = results.multi_face_landmarks[0].landmark
+  # Apply histogram equalization for lighting normalization
+  equalized = cv2.equalizeHist(resized)
   
-  # Convert to embedding: flatten landmark coordinates
-  embedding = []
-  for lm in landmarks:
-    embedding.extend([lm.x, lm.y, lm.z])
+  # Flatten pixels
+  pixel_features = equalized.flatten().astype(np.float32)
+  
+  # Compute histogram features (16 bins)
+  hist = cv2.calcHist([equalized], [0], None, [16], [0, 256])
+  hist = hist.flatten().astype(np.float32)
+  
+  # Combine pixel features with histogram
+  # Use a subset of pixels to reduce dimensionality (every 4th pixel)
+  embedding = np.concatenate([
+    pixel_features[::4],  # 1024 features (64x64/4)
+    hist  # 16 histogram features
+  ])
   
   # Normalize embedding
-  embedding = np.array(embedding, dtype=np.float32)
   embedding = embedding / (np.linalg.norm(embedding) + 1e-8)
   
   return embedding.tolist()
@@ -113,10 +114,10 @@ async def root():
   return {
     "status": "running",
     "service": "face-verification",
-    "model": "MediaPipe Face Mesh",
-    "version": "5.0",
+    "model": "MediaPipe Detection + Pixel Features",
+    "version": "5.1",
     "memory_optimized": True,
-    "embedding_size": 468 * 3  # 468 landmarks × 3 coordinates
+    "embedding_size": 1040  # 1024 pixel features + 16 histogram
   }
 
 @app.get("/health")
@@ -127,7 +128,7 @@ async def health():
     "service": "face-verification",
     "ready": True,
     "memory_optimized": True,
-    "embedding_size": 468 * 3
+    "embedding_size": 1040
   }
 
 @app.post("/get-embedding")
@@ -153,7 +154,7 @@ async def get_embedding(image: UploadFile = File(...)):
     return {
       "success": True,
       "embedding": embedding,
-      "model": "MediaPipe-FaceMesh",
+      "model": "MediaPipe-PixelFeatures",
       "embedding_size": len(embedding),
       "face_detected": True
     }
@@ -185,8 +186,8 @@ async def compare_embeddings(
     # Compute cosine distance
     distance = float(1.0 - np.dot(arr_a, arr_b))
     
-    # Threshold for MediaPipe landmarks: < 0.1 = same person (99%+ similarity required)
-    threshold = 0.1
+    # Threshold for pixel-based features: < 0.15 = same person (85%+ similarity)
+    threshold = 0.15
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - distance)
 
@@ -195,7 +196,7 @@ async def compare_embeddings(
       "distance": round(distance, 4),
       "threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "MediaPipe-FaceMesh"
+      "model": "MediaPipe-PixelFeatures"
     }
   except Exception as exc:
     print(f"❌ Comparison error: {exc}")
@@ -242,7 +243,7 @@ async def verify_face(
     
     # Compare
     distance = float(1.0 - np.dot(arr_a, arr_b))
-    threshold = 0.1
+    threshold = 0.15
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - distance)
     
@@ -251,7 +252,7 @@ async def verify_face(
       "distance": round(distance, 4),
       "threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "MediaPipe-FaceMesh"
+      "model": "MediaPipe-PixelFeatures"
     }
     
   except ValueError as ve:
