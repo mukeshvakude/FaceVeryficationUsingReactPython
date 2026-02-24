@@ -2,7 +2,7 @@ import os
 import tempfile
 import json
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from deepface import DeepFace
 
@@ -77,6 +77,9 @@ async def get_embedding(image: UploadFile = File(...)):
   try:
     temp_path = _save_upload(image)
 
+    # Ensure model is cached before embedding extraction
+    _get_model("VGG-Face")
+
     # Use represent() to get embedding vector (no model building - uses cache)
     embeddings = DeepFace.represent(
       img_path=temp_path,
@@ -107,7 +110,10 @@ async def get_embedding(image: UploadFile = File(...)):
 
 
 @app.post("/compare-embeddings")
-async def compare_embeddings(embA: list, embB: list):
+async def compare_embeddings(
+  embA: list = Body(...),
+  embB: list = Body(...)
+):
   """Compare two embeddings using cosine distance - instant operation"""
   try:
     # Convert to numpy arrays
