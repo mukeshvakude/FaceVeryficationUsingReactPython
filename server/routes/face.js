@@ -8,7 +8,12 @@ import { findUserById } from "../utils/userStore.js";
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const FACE_SERVICE_URL = process.env.FACE_SERVICE_URL || "http://localhost:5001";
+const getFaceServiceBaseUrl = () => {
+  const raw = process.env.FACE_SERVICE_URL || "http://localhost:5001";
+  return raw.replace(/\/verify-face\/?$/, "");
+};
+
+const FACE_SERVICE_URL = getFaceServiceBaseUrl();
 
 /**
  * Register user's face - compute and store embedding

@@ -1,12 +1,20 @@
+import axios from "axios";
 import bcrypt from "bcryptjs";
 import express from "express";
+import FormData from "form-data";
 import jwt from "jsonwebtoken";
 import multer from "multer";
+import pool, { getDbType } from "../config/dbPool.js";
 import { saveFaceImage, saveFaceImageToDb } from "../utils/faceStorage.js";
 import { createUser, findUserByEmail, updateUserFacePath, listUsers } from "../utils/userStore.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+const getFaceServiceBaseUrl = () => {
+  const raw = process.env.FACE_SERVICE_URL || "http://localhost:5001";
+  return raw.replace(/\/verify-face\/?$/, "");
+};
 
 router.post("/register", async (req, res) => {
   try {
@@ -68,6 +76,24 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
     
     // Save face image to database (persistent storage for production)
     await saveFaceImageToDb(user.id, image.buffer);
+
+    // Extract and store face embedding for fast verification
+    const faceServiceUrl = getFaceServiceBaseUrl();
+    const form = new FormData();
+    form.append("image", image.buffer, image.originalname || "face.jpg");
+
+    const embeddingResponse = await axios.post(`${faceServiceUrl}/get-embedding`, form, {
+      headers: form.getHeaders(),
+      maxBodyLength: Infinity,
+      timeout: 30000
+    });
+
+    if (!embeddingResponse.data?.success) {
+      return res.status(400).json({ message: "Failed to extract face embedding" });
+    }
+
+    const embedding = embeddingResponse.data.embedding;
+    await updateUserEmbedding(user.id, embedding);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -149,5 +175,19 @@ router.get("/users/debug", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
+
+const updateUserEmbedding = async (userId, embedding) => {
+  const dbType = getDbType();
+  const params = [JSON.stringify(embedding), userId];
+  const query = dbType === "postgresql"
+    ? "UPDATE users SET \"faceEmbedding\" = $1 WHERE id = $2"
+    : "UPDATE users SET faceEmbedding = ? WHERE id = ?";
+
+  const result = await pool.query(query, params);
+  const affected = result?.affectedRows || result?.rowCount || 0;
+  if (affected === 0) {
+    throw new Error("Failed to save face embedding");
+  }
+};
 
 export default router;

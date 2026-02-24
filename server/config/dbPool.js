@@ -71,7 +71,8 @@ export const getConnection = async () => {
         passwordHash: row.passwordhash || row.passwordHash,
         createdAt: row.createdat || row.createdAt,
         faceImagePath: row.faceimagepath || row.faceImagePath,
-        faceImageData: row.faceimagedata || row.faceImageData
+        faceImageData: row.faceimagedata || row.faceImageData,
+        faceEmbedding: row.faceembedding || row.faceEmbedding
       };
     };
     

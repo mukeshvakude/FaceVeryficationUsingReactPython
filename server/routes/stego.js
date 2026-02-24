@@ -14,6 +14,11 @@ import { sendStegoEmail } from "../utils/mailer.js";
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+const getFaceServiceBaseUrl = () => {
+  const raw = process.env.FACE_SERVICE_URL || "http://localhost:5001";
+  return raw.replace(/\/verify-face\/?$/, "");
+};
+
 const collectImages = (files) => {
   const images = [];
   if (files?.images?.length) {
@@ -203,7 +208,7 @@ router.post(
         return res.status(400).json({ message: "Stego and live images required" });
       }
 
-      const faceUrl = process.env.FACE_SERVICE_URL;
+      const faceUrl = getFaceServiceBaseUrl();
       if (!faceUrl) {
         return res.status(500).json({ message: "FACE_SERVICE_URL not set" });
       }
