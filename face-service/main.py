@@ -185,8 +185,8 @@ async def compare_embeddings(
     # Compute cosine distance
     distance = float(1.0 - np.dot(arr_a, arr_b))
     
-    # Threshold for MediaPipe landmarks: < 0.3 = same person
-    threshold = 0.3
+    # Threshold for MediaPipe landmarks: < 0.1 = same person (99%+ similarity required)
+    threshold = 0.1
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - distance)
 
@@ -242,7 +242,7 @@ async def verify_face(
     
     # Compare
     distance = float(1.0 - np.dot(arr_a, arr_b))
-    threshold = 0.3
+    threshold = 0.1
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - distance)
     
