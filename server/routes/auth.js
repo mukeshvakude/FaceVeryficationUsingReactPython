@@ -78,22 +78,30 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
     await saveFaceImageToDb(user.id, image.buffer);
 
     // Extract and store face embedding for fast verification
-    const faceServiceUrl = getFaceServiceBaseUrl();
-    const form = new FormData();
-    form.append("image", image.buffer, image.originalname || "face.jpg");
+    try {
+      const faceServiceUrl = getFaceServiceBaseUrl();
+      const form = new FormData();
+      form.append("image", image.buffer, image.originalname || "face.jpg");
 
-    const embeddingResponse = await axios.post(`${faceServiceUrl}/get-embedding`, form, {
-      headers: form.getHeaders(),
-      maxBodyLength: Infinity,
-      timeout: 30000
-    });
+      const embeddingResponse = await axios.post(`${faceServiceUrl}/get-embedding`, form, {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity,
+        timeout: 30000
+      });
 
-    if (!embeddingResponse.data?.success) {
-      return res.status(400).json({ message: "Failed to extract face embedding" });
+      if (embeddingResponse.data?.success) {
+        const embedding = embeddingResponse.data.embedding;
+        await updateUserEmbedding(user.id, embedding);
+      } else {
+        console.warn("⚠️ Embedding extraction failed during registration");
+      }
+    } catch (embedErr) {
+      console.warn("⚠️ Embedding extraction error during registration:", embedErr.message);
+      if (embedErr.response?.data) {
+        console.warn("  Face service response:", embedErr.response.data);
+      }
+      // Continue registration; embedding can be backfilled later
     }
-
-    const embedding = embeddingResponse.data.embedding;
-    await updateUserEmbedding(user.id, embedding);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -106,6 +114,7 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err) {
+    console.error("❌ Registration error:", err.message);
     return res.status(500).json({ message: "Registration failed" });
   }
 });
