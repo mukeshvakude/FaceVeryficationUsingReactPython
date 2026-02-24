@@ -27,10 +27,34 @@ const CameraCapture = ({ label, onCapture }) => {
 
   const startCamera = async () => {
     setWarning("");
-    const media = await navigator.mediaDevices.getUserMedia({ video: true });
-    setStream(media);
-    if (videoRef.current) {
-      videoRef.current.srcObject = media;
+    try {
+      const media = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
+      });
+      setStream(media);
+      if (videoRef.current) {
+        videoRef.current.srcObject = media;
+      }
+    } catch (err) {
+      console.error("Camera access error:", err);
+      
+      let errorMsg = "Camera access failed. ";
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        errorMsg += "Please allow camera permissions in your browser settings.";
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        errorMsg += "No camera found. Please connect a camera.";
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        errorMsg += "Camera is already in use by another application. Close other apps using the camera.";
+      } else if (err.name === "OverconstrainedError") {
+        errorMsg += "Camera doesn't support the requested resolution.";
+      } else {
+        errorMsg += err.message || "Unknown error occurred.";
+      }
+      
+      setWarning(errorMsg);
     }
   };
 
@@ -58,7 +82,11 @@ const CameraCapture = ({ label, onCapture }) => {
 
   const capture = async () => {
     if (!stream) {
-      await startCamera();
+      try {
+        await startCamera();
+      } catch (err) {
+        // Error already handled in startCamera
+      }
       return;
     }
 
@@ -101,7 +129,11 @@ const CameraCapture = ({ label, onCapture }) => {
           )}
         </div>
       </div>
-      {warning && <p className="mt-1.5 text-[10px] text-amber-300">{warning}</p>}
+      {warning && (
+        <p className={`mt-1.5 text-[10px] ${warning.includes("failed") || warning.includes("error") ? "text-red-400" : "text-amber-300"}`}>
+          {warning}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-1">
         <button
           type="button"
