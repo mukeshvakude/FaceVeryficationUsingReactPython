@@ -44,7 +44,7 @@ def _get_face_detector():
   """Initialize face detection model"""
   if "detector" not in _model_cache:
     try:
-      ctx = insightface.app.FaceAnalysis(providers=['CPUProvider'])
+      ctx = insightface.app.FaceAnalysis(providers=['CPUExecutionProvider'])
       ctx.prepare(ctx_id=0, det_size=(320, 320))
       _model_cache["detector"] = ctx
       print("✅ Loaded face detector")
