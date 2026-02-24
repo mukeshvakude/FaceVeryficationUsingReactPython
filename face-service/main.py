@@ -9,7 +9,6 @@ import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 import face_recognition
-from scipy.spatial.distance import euclidean
 import tempfile
 
 # Initialize FastAPI
@@ -104,7 +103,7 @@ async def compare_embeddings(
     arr_b = np.array(embB, dtype=np.float64)
     
     # Compute Euclidean distance
-    distance = float(euclidean(arr_a, arr_b))
+    distance = float(np.linalg.norm(arr_a - arr_b))
     
     # dlib ResNet threshold: < 0.6 = same person (99.5% confidence)
     threshold = 0.6
@@ -150,8 +149,8 @@ async def verify_face(
     emb_a = encodings_a[0]
     emb_b = encodings_b[0]
     
-    # Compare
-    distance = float(euclidean(emb_a, emb_b))
+    # Compare using Euclidean distance
+    distance = float(np.linalg.norm(emb_a - emb_b))
     threshold = 0.6
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - (distance / 2.0))

@@ -4,5 +4,4 @@ python-multipart==0.0.9
 opencv-python==4.10.0.84
 numpy<2.0
 pillow>=10.0.0
-scipy==1.11.4
-face-recognition==1.4.0
+face-recognition==1.3.0
