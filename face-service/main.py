@@ -1,6 +1,7 @@
 """
-Face Verification Service - Lightweight using face_recognition (dlib-based)
-Memory footprint: ~50MB (no large model downloads needed)
+Face Verification Service - Ultra-lightweight using MediaPipe
+Memory footprint: ~50MB (pure Python, no compilation needed)
+Build time: <10s
 """
 
 import os
@@ -8,11 +9,11 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-import face_recognition
+import mediapipe as mp
 import tempfile
 
 # Initialize FastAPI
-app = FastAPI(title="Face Verification Service v4.0", version="4.0.0")
+app = FastAPI(title="Face Verification Service v5.0", version="5.0.0")
 
 # CORS configuration
 app.add_middleware(
@@ -23,11 +24,88 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# MediaPipe Face Detection
+mp_face_detection = mp.solutions.face_detection
+mp_face_mesh = mp.solutions.face_mesh
+face_detection = mp_face_detection.FaceDetection(
+    model_selection=1,  # 1 = full range
+    min_detection_confidence=0.5
+)
+face_mesh = mp_face_mesh.FaceMesh(
+    static_image_mode=True,
+    max_num_faces=1,
+    min_detection_confidence=0.5
+)
+
 def _save_upload(upload_file: UploadFile) -> str:
   """Save uploaded file to temporary location"""
   with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
     tmp.write(upload_file.file.read())
     return tmp.name
+
+def _extract_face_region(image):
+  """Extract and normalize face region using MediaPipe detection"""
+  h, w, _ = image.shape
+  
+  # Detect face
+  results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+  
+  if not results.detections:
+    return None
+  
+  # Get first detection
+  detection = results.detections[0]
+  bbox = detection.location_data.relative_bounding_box
+  
+  # Convert to pixel coordinates
+  x = int(bbox.xmin * w)
+  y = int(bbox.ymin * h)
+  width = int(bbox.width * w)
+  height = int(bbox.height * h)
+  
+  # Add padding
+  padding = int(0.1 * max(width, height))
+  x = max(0, x - padding)
+  y = max(0, y - padding)
+  width = min(w - x, width + 2 * padding)
+  height = min(h - y, height + 2 * padding)
+  
+  # Extract face region
+  face_region = image[y:y+height, x:x+width]
+  
+  if face_region.size == 0:
+    return None
+  
+  # Normalize to 256x256
+  face_normalized = cv2.resize(face_region, (256, 256), interpolation=cv2.INTER_AREA)
+  
+  return face_normalized
+
+def _face_region_to_embedding(face_region):
+  """Convert face region to embedding using facial landmarks"""
+  if face_region is None:
+    raise ValueError("No face region")
+  
+  # Get face landmarks
+  rgb_image = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
+  results = face_mesh.process(rgb_image)
+  
+  if not results.multi_face_landmarks or len(results.multi_face_landmarks) == 0:
+    raise ValueError("No face landmarks detected")
+  
+  # Get landmarks (468 points, 3D coordinates)
+  landmarks = results.multi_face_landmarks[0].landmark
+  
+  # Convert to embedding: flatten landmark coordinates
+  embedding = []
+  for lm in landmarks:
+    embedding.extend([lm.x, lm.y, lm.z])
+  
+  # Normalize embedding
+  embedding = np.array(embedding, dtype=np.float32)
+  embedding = embedding / (np.linalg.norm(embedding) + 1e-8)
+  
+  return embedding.tolist()
 
 @app.get("/")
 async def root():
@@ -35,10 +113,10 @@ async def root():
   return {
     "status": "running",
     "service": "face-verification",
-    "model": "dlib-ResNet (face_recognition)",
-    "version": "4.0",
+    "model": "MediaPipe Face Mesh",
+    "version": "5.0",
     "memory_optimized": True,
-    "embedding_size": 128
+    "embedding_size": 468 * 3  # 468 landmarks × 3 coordinates
   }
 
 @app.get("/health")
@@ -49,36 +127,34 @@ async def health():
     "service": "face-verification",
     "ready": True,
     "memory_optimized": True,
-    "embedding_size": 128
+    "embedding_size": 468 * 3
   }
 
 @app.post("/get-embedding")
 async def get_embedding(image: UploadFile = File(...)):
-  """Extract face embedding from image using dlib ResNet"""
+  """Extract face embedding from image using MediaPipe Face Mesh"""
   temp_path = None
   try:
     temp_path = _save_upload(image)
     
     # Load image
-    image_data = face_recognition.load_image_file(temp_path)
+    image_data = cv2.imread(temp_path)
+    if image_data is None:
+      raise ValueError("Invalid image format")
     
-    # Get face encodings (embeddings)
-    encodings = face_recognition.face_encodings(image_data, num_jitters=1)
-    
-    if not encodings:
+    # Extract face region
+    face_region = _extract_face_region(image_data)
+    if face_region is None:
       raise ValueError("No face detected in image")
     
-    # Get largest face (first one detected)
-    embedding = encodings[0]
-    
-    # Convert to list for JSON serialization
-    embedding_list = embedding.tolist()
+    # Get embedding from landmarks
+    embedding = _face_region_to_embedding(face_region)
     
     return {
       "success": True,
-      "embedding": embedding_list,
-      "model": "dlib-ResNet",
-      "embedding_size": len(embedding_list),
+      "embedding": embedding,
+      "model": "MediaPipe-FaceMesh",
+      "embedding_size": len(embedding),
       "face_detected": True
     }
     
@@ -96,26 +172,30 @@ async def compare_embeddings(
   embA: list = Body(...),
   embB: list = Body(...)
 ):
-  """Compare two embeddings using Euclidean distance - instant operation"""
+  """Compare two embeddings using cosine distance"""
   try:
     # Convert to numpy arrays
-    arr_a = np.array(embA, dtype=np.float64)
-    arr_b = np.array(embB, dtype=np.float64)
+    arr_a = np.array(embA, dtype=np.float32)
+    arr_b = np.array(embB, dtype=np.float32)
     
-    # Compute Euclidean distance
-    distance = float(np.linalg.norm(arr_a - arr_b))
+    # Normalize
+    arr_a = arr_a / (np.linalg.norm(arr_a) + 1e-8)
+    arr_b = arr_b / (np.linalg.norm(arr_b) + 1e-8)
     
-    # dlib ResNet threshold: < 0.6 = same person (99.5% confidence)
-    threshold = 0.6
+    # Compute cosine distance
+    distance = float(1.0 - np.dot(arr_a, arr_b))
+    
+    # Threshold for MediaPipe landmarks: < 0.3 = same person
+    threshold = 0.3
     is_verified = distance < threshold
-    confidence = max(0.0, 1.0 - (distance / 2.0))  # Normalize to 0-1
+    confidence = max(0.0, 1.0 - distance)
 
     return {
       "verified": is_verified,
       "distance": round(distance, 4),
       "threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "dlib-ResNet"
+      "model": "MediaPipe-FaceMesh"
     }
   except Exception as exc:
     print(f"❌ Comparison error: {exc}")
@@ -126,7 +206,7 @@ async def verify_face(
   imageA: UploadFile = File(...),
   imageB: UploadFile = File(...)
 ):
-  """Compare two images directly using dlib ResNet embeddings"""
+  """Compare two images directly using MediaPipe Face Mesh"""
   temp_a = None
   temp_b = None
 
@@ -134,33 +214,44 @@ async def verify_face(
     temp_a = _save_upload(imageA)
     temp_b = _save_upload(imageB)
     
-    # Load and encode both images
-    img_a = face_recognition.load_image_file(temp_a)
-    img_b = face_recognition.load_image_file(temp_b)
+    # Load images
+    img_a = cv2.imread(temp_a)
+    img_b = cv2.imread(temp_b)
     
-    # Get encodings
-    encodings_a = face_recognition.face_encodings(img_a, num_jitters=1)
-    encodings_b = face_recognition.face_encodings(img_b, num_jitters=1)
+    if img_a is None or img_b is None:
+      raise ValueError("Invalid image format")
     
-    if not encodings_a or not encodings_b:
+    # Extract face regions
+    face_a = _extract_face_region(img_a)
+    face_b = _extract_face_region(img_b)
+    
+    if face_a is None or face_b is None:
       raise ValueError("Face not detected in one or both images")
     
-    # Get first face from each image
-    emb_a = encodings_a[0]
-    emb_b = encodings_b[0]
+    # Get embeddings
+    emb_a = _face_region_to_embedding(face_a)
+    emb_b = _face_region_to_embedding(face_b)
     
-    # Compare using Euclidean distance
-    distance = float(np.linalg.norm(emb_a - emb_b))
-    threshold = 0.6
+    # Convert to numpy for comparison
+    arr_a = np.array(emb_a, dtype=np.float32)
+    arr_b = np.array(emb_b, dtype=np.float32)
+    
+    # Normalize
+    arr_a = arr_a / (np.linalg.norm(arr_a) + 1e-8)
+    arr_b = arr_b / (np.linalg.norm(arr_b) + 1e-8)
+    
+    # Compare
+    distance = float(1.0 - np.dot(arr_a, arr_b))
+    threshold = 0.3
     is_verified = distance < threshold
-    confidence = max(0.0, 1.0 - (distance / 2.0))
+    confidence = max(0.0, 1.0 - distance)
     
     return {
       "verified": is_verified,
       "distance": round(distance, 4),
       "threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "dlib-ResNet"
+      "model": "MediaPipe-FaceMesh"
     }
     
   except ValueError as ve:
