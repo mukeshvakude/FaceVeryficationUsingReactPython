@@ -12,7 +12,7 @@ app = FastAPI()
 _model_cache = {}
 
 
-def _get_model(model_name="VGG-Face"):
+def _get_model(model_name="Facenet"):
   """Get model from cache or load it"""
   if model_name not in _model_cache:
     try:
@@ -40,7 +40,7 @@ async def root():
   return {
     "status": "running",
     "service": "face-verification",
-    "model": "VGG-Face",
+    "model": "Facenet",
     "version": "2.0"
   }
 
@@ -52,7 +52,7 @@ async def health():
     "status": "healthy",
     "service": "face-verification",
     "ready": True,
-    "model_cached": "VGG-Face" in _model_cache
+    "model_cached": "Facenet" in _model_cache
   }
 
 
@@ -78,12 +78,12 @@ async def get_embedding(image: UploadFile = File(...)):
     temp_path = _save_upload(image)
 
     # Ensure model is cached before embedding extraction
-    _get_model("VGG-Face")
+    _get_model("Facenet")
 
     # Use represent() to get embedding vector (no model building - uses cache)
     embeddings = DeepFace.represent(
       img_path=temp_path,
-      model_name="VGG-Face",
+      model_name="Facenet",
       enforce_detection=True
     )
     
@@ -96,7 +96,7 @@ async def get_embedding(image: UploadFile = File(...)):
     return {
       "success": True,
       "embedding": embedding_list,
-      "model": "VGG-Face",
+      "model": "Facenet",
       "embedding_size": len(embedding_list)
     }
   except ValueError as ve:
@@ -124,8 +124,8 @@ async def compare_embeddings(
     from scipy.spatial.distance import cosine
     distance = float(cosine(arr_a, arr_b))
     
-    # VGG-Face threshold: < 0.60 = same person, > 0.68 = different
-    threshold = 0.60
+    # Facenet threshold: < 0.40 = same person, > 0.50 = different
+    threshold = 0.40
     is_verified = distance < threshold
     confidence = max(0.0, 1.0 - distance)
 
@@ -134,7 +134,7 @@ async def compare_embeddings(
       "distance": round(distance, 4),
       "threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "VGG-Face"
+      "model": "Facenet"
     }
   except Exception as exc:
     raise HTTPException(status_code=500, detail=f"Comparison failed: {str(exc)}")
@@ -150,21 +150,19 @@ async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(
     temp_a = _save_upload(imageA)
     temp_b = _save_upload(imageB)
 
-    # Use VGG-Face model - lighter than Facenet512, better for low-memory environments
-    # Facenet512 can use 500MB+ RAM, VGG-Face uses ~150MB
+    # Use Facenet model - balanced size and accuracy (~100MB)
     result = DeepFace.verify(
       img1_path=temp_a, 
       img2_path=temp_b, 
-      model_name="VGG-Face",
+      model_name="Facenet",
       distance_metric="cosine",
       enforce_detection=True
     )
     distance = float(result.get("distance", 0.0))
-    threshold = float(result.get("threshold", 0.68))  # VGG-Face default threshold
+    threshold = float(result.get("threshold", 0.40))  # Facenet default threshold
     
-    # For VGG-Face with cosine, distance < 0.55 is same person, > 0.68 is different
-    # We use 0.60 as a balanced threshold for security and usability
-    strict_threshold = 0.60
+    # For Facenet with cosine, distance < 0.40 is same person, > 0.50 is different
+    strict_threshold = 0.40
     is_verified = distance < strict_threshold
     
     confidence = max(0.0, 1.0 - distance)
@@ -175,7 +173,7 @@ async def verify_face(imageA: UploadFile = File(...), imageB: UploadFile = File(
       "threshold": strict_threshold,
       "model_threshold": threshold,
       "confidence": round(confidence, 4),
-      "model": "VGG-Face"
+      "model": "Facenet"
     }
   except ValueError as ve:
     # Face not detected
