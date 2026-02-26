@@ -235,7 +235,8 @@ router.post(
 
       // Extract cipher text from stego image (don't decrypt - client will handle that)
       const cipherText = decodeStego(image.buffer);
-
+      console.log("[DECRYPT DEBUG] Extracted cipherText:", cipherText);
+      console.log("[DECRYPT DEBUG] Provided encryptionKey:", req.body.encryptionKey);
       return res.json({ cipherText, verification });
     } catch (err) {
       // Handle face detection failures
