@@ -86,27 +86,34 @@ const getEmailHtmlTemplate = (encryptionKey) => {
   `;
 };
 
-export const sendStegoEmail = async (recipientEmail, encryptionKey, imageBuffer, imageName) => {
+export const sendStegoEmail = async (recipientEmail, encryptionKey, stegoImageBuffer, stegoImageName, originalImageBuffer, originalImageName) => {
   try {
     // Use SendGrid if API key is configured
     if (process.env.SENDGRID_API_KEY) {
       const fromEmail = process.env.SENDGRID_FROM_EMAIL || process.env.EMAIL_USER;
-      
+      const attachments = [
+        {
+          content: stegoImageBuffer.toString('base64'),
+          filename: stegoImageName,
+          type: "image/png",
+          disposition: "attachment"
+        }
+      ];
+      if (originalImageBuffer && originalImageName) {
+        attachments.push({
+          content: originalImageBuffer.toString('base64'),
+          filename: originalImageName,
+          type: "image/png",
+          disposition: "attachment"
+        });
+      }
       const msg = {
         to: recipientEmail,
         from: fromEmail,
         subject: "🔐 SecureVision - Encoded Image & Encryption Key",
         html: getEmailHtmlTemplate(encryptionKey),
-        attachments: [
-          {
-            content: imageBuffer.toString('base64'),
-            filename: imageName,
-            type: "image/png",
-            disposition: "attachment"
-          }
-        ]
+        attachments
       };
-
       const response = await sgMail.send(msg);
       console.log("✉️  Email sent successfully via SendGrid");
       console.log("  TO:", recipientEmail);
@@ -115,20 +122,27 @@ export const sendStegoEmail = async (recipientEmail, encryptionKey, imageBuffer,
     }
 
     // Fallback to nodemailer
+    const attachments = [
+      {
+        filename: stegoImageName,
+        content: stegoImageBuffer,
+        contentType: "image/png"
+      }
+    ];
+    if (originalImageBuffer && originalImageName) {
+      attachments.push({
+        filename: originalImageName,
+        content: originalImageBuffer,
+        contentType: "image/png"
+      });
+    }
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: recipientEmail,
       subject: "🔐 SecureVision - Encoded Image & Encryption Key",
       html: getEmailHtmlTemplate(encryptionKey),
-      attachments: [
-        {
-          filename: imageName,
-          content: imageBuffer,
-          contentType: "image/png"
-        }
-      ]
+      attachments
     };
-
     const transporter = await getTransporter();
     const info = await transporter.sendMail(mailOptions);
     console.log("✉️  Email sent successfully via nodemailer");

@@ -406,11 +406,14 @@ router.post(
         
         try {
           const imageBuffer = image.buffer;
+          // Assume original image is available as image.originalBuffer and image.originalName
           await sendStegoEmail(
             recipientEmail,
             encryptionKey,
             imageBuffer,
-            `${imageName}-stego.png`
+            `${imageName}-stego.png`,
+            image.originalBuffer || null,
+            image.originalName || null
           );
           results.push({ image: imageName, status: "sent" });
         } catch (err) {
