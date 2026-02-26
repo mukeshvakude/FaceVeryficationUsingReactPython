@@ -5,34 +5,14 @@ import FormData from "form-data";
 import multer from "multer";
 import sharp from "sharp";
 import { requireAuth } from "../middleware/auth.js";
-import pool, { getDbType } from "../config/dbPool.js";
 import { encryptText, decryptText } from "../utils/crypto.js";
-import { readFaceImage, readFaceImageFromDb } from "../utils/faceStorage.js";
+import { readFaceImage } from "../utils/faceStorage.js";
 import { decodeStego, encodeStego } from "../utils/stego.js";
 import { findUserById } from "../utils/userStore.js";
 import { sendStegoEmail } from "../utils/mailer.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
-
-const getFaceServiceBaseUrl = () => {
-  const raw = process.env.FACE_SERVICE_URL || "http://localhost:5001";
-  return raw.replace(/\/verify-face\/?$/, "");
-};
-
-const updateUserEmbedding = async (userId, embedding) => {
-  const dbType = getDbType();
-  const params = [JSON.stringify(embedding), userId];
-  const query = dbType === "postgresql"
-    ? "UPDATE users SET \"faceEmbedding\" = $1 WHERE id = $2"
-    : "UPDATE users SET faceEmbedding = ? WHERE id = ?";
-
-  const result = await pool.query(query, params);
-  const affected = result?.affectedRows || result?.rowCount || 0;
-  if (affected === 0) {
-    throw new Error("Failed to save face embedding");
-  }
-};
 
 const collectImages = (files) => {
   const images = [];
@@ -223,95 +203,27 @@ router.post(
         return res.status(400).json({ message: "Stego and live images required" });
       }
 
-      const faceUrl = getFaceServiceBaseUrl();
+      const user = await findUserById(req.user.id);
+      if (!user || !user.faceImagePath) {
+        return res.status(404).json({ message: "No registered face found" });
+      }
+
+      const faceUrl = process.env.FACE_SERVICE_URL;
       if (!faceUrl) {
         return res.status(500).json({ message: "FACE_SERVICE_URL not set" });
       }
 
-      const user = await findUserById(req.user.id);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
+      const storedBuffer = await readFaceImage(user.faceImagePath);
+      const form = new FormData();
+      form.append("imageA", storedBuffer, "registered.jpg");
+      form.append("imageB", live.buffer, live.originalname || "live.jpg");
 
-      // Backfill embedding from stored face image if missing
-      if (!user.faceEmbedding) {
-        let storedBuffer = await readFaceImageFromDb(user.id);
-
-        if (!storedBuffer && user.faceImagePath) {
-          try {
-            storedBuffer = await readFaceImage(user.faceImagePath);
-          } catch (err) {
-            console.error("Failed to read from file system:", err.message);
-          }
-        }
-
-        if (storedBuffer) {
-          console.log("  Backfilling face embedding from stored image...");
-          const backfillForm = new FormData();
-          backfillForm.append("image", storedBuffer, "registered.jpg");
-
-          const backfillResponse = await axios.post(`${faceUrl}/get-embedding`, backfillForm, {
-            headers: backfillForm.getHeaders(),
-            maxBodyLength: Infinity,
-            timeout: 30000
-          });
-
-          if (backfillResponse.data?.success) {
-            await updateUserEmbedding(user.id, backfillResponse.data.embedding);
-            user.faceEmbedding = backfillResponse.data.embedding;
-            console.log("  ✅ Face embedding backfilled");
-          }
-        }
-      }
-
-      if (!user.faceEmbedding) {
-        return res.status(404).json({ message: "No registered face found. Please register your face first." });
-      }
-
-      let storedEmbedding;
-      try {
-        storedEmbedding = typeof user.faceEmbedding === 'string' 
-          ? JSON.parse(user.faceEmbedding) 
-          : user.faceEmbedding;
-      } catch (e) {
-        console.error("Failed to parse stored embedding:", e.message);
-        return res.status(500).json({ message: "Invalid stored embedding" });
-      }
-
-      console.log("  Getting embedding from live image...");
-      
-      // Get embedding from live image
-      const liveForm = new FormData();
-      liveForm.append("image", live.buffer, live.originalname || "face.jpg");
-
-      const embeddingResponse = await axios.post(`${faceUrl}/get-embedding`, liveForm, {
-        headers: liveForm.getHeaders(),
-        maxBodyLength: Infinity,
-        timeout: 30000
+      const verifyResponse = await axios.post(faceUrl, form, {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity
       });
 
-      if (!embeddingResponse.data.success) {
-        return res.status(400).json({ 
-          message: "No face detected in live image. Please ensure your face is clearly visible.",
-          error: "Face detection failed"
-        });
-      }
-
-      const liveEmbedding = embeddingResponse.data.embedding;
-      console.log("  ✅ Live embedding extracted");
-
-      // Compare embeddings
-      console.log("  Comparing embeddings...");
-      
-      const comparisonResponse = await axios.post(`${faceUrl}/compare-embeddings`, {
-        embA: storedEmbedding,
-        embB: liveEmbedding
-      }, {
-        timeout: 5000
-      });
-
-      const verification = comparisonResponse.data;
-      console.log("  ✅ Verification result:", verification.verified ? "PASSED" : "FAILED");
+      const verification = verifyResponse.data;
       
       // Check if face verification passed
       if (!verification?.verified) {
@@ -334,29 +246,7 @@ router.post(
         });
       }
       
-      // Handle face service unavailable (502, 503, 504)
-      if (err.response?.status === 502 || err.response?.status === 503 || err.response?.status === 504) {
-        console.error("Face service unavailable:", err.message);
-        console.error("  Service URL:", process.env.FACE_SERVICE_URL);
-        console.error("  Status:", err.response?.status);
-        return res.status(503).json({ 
-          message: "Face verification service is temporarily unavailable. Please try again in a moment.",
-          error: "Service starting up or temporarily down"
-        });
-      }
-      
-      // Handle timeout
-      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-        console.error("Face service timeout:", err.message);
-        return res.status(504).json({ 
-          message: "Face verification timed out. The service may be starting up. Please try again in a moment.",
-          error: "Request timeout"
-        });
-      }
-      
       console.error("Face decrypt error:", err.message);
-      console.error("  Error code:", err.code);
-      console.error("  Response status:", err.response?.status);
       return res.status(500).json({ 
         message: "Face decrypt failed",
         error: process.env.NODE_ENV === "development" ? err.message : undefined
@@ -398,21 +288,34 @@ router.post(
         return res.status(400).json({ message: "Invalid email address" });
       }
 
-      // Send email for each image
+      // Create stego images and send as attachments
       const results = [];
       for (let i = 0; i < images.length; i++) {
         const image = images[i];
         const imageName = image.originalname?.replace(/\.[^.]+$/, "") || `image-${i + 1}`;
-        
         try {
-          const imageBuffer = image.buffer;
+          // Convert to PNG if needed
+          let pngBuffer = image.buffer;
+          if (!image.originalname?.toLowerCase().endsWith('.png')) {
+            pngBuffer = await convertToPng(image.buffer, image.originalname);
+          }
+          // Encrypt the message using the provided encryptionKey
+          const encrypted = encryptText(req.body.message || req.body.cipherText || '', encryptionKey);
+          // Create stego image
+          const stegoBuffer = encodeStego(pngBuffer, encrypted);
+          // Calculate file size and hash for integrity
+          const fileSize = stegoBuffer.length;
+          const crypto = await import('crypto');
+          const hash = crypto.createHash('sha256').update(stegoBuffer).digest('hex');
           await sendStegoEmail(
             recipientEmail,
             encryptionKey,
-            imageBuffer,
-            `${imageName}-stego.png`
+            stegoBuffer,
+            `${imageName}-stego.png`,
+            fileSize,
+            hash
           );
-          results.push({ image: imageName, status: "sent" });
+          results.push({ image: imageName, status: "sent", fileSize, hash });
         } catch (err) {
           console.error(`Error sending image ${imageName}:`, err.message);
           results.push({ image: imageName, status: "failed", error: err.message });
