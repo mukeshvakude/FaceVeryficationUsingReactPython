@@ -303,17 +303,16 @@ router.post(
           const encrypted = encryptText(req.body.message || req.body.cipherText || '', encryptionKey);
           // Create stego image
           const stegoBuffer = encodeStego(pngBuffer, encrypted);
-          // Calculate file size and hash for integrity
+          // Calculate file size and hash for integrity, and log them
           const fileSize = stegoBuffer.length;
           const crypto = await import('crypto');
           const hash = crypto.createHash('sha256').update(stegoBuffer).digest('hex');
+          console.log(`  [EMAIL ATTACHMENT] ${imageName}-stego.png size: ${fileSize} bytes, sha256: ${hash}`);
           await sendStegoEmail(
             recipientEmail,
             encryptionKey,
             stegoBuffer,
-            `${imageName}-stego.png`,
-            fileSize,
-            hash
+            `${imageName}-stego.png`
           );
           results.push({ image: imageName, status: "sent", fileSize, hash });
         } catch (err) {
