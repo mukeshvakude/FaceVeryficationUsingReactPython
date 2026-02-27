@@ -213,7 +213,15 @@ router.post(
         return res.status(500).json({ message: "FACE_SERVICE_URL not set" });
       }
 
-      const storedBuffer = await readFaceImage(user.faceImagePath);
+      let storedBuffer;
+      try {
+        storedBuffer = await readFaceImage(user.faceImagePath);
+      } catch (err) {
+        if (err.code === 'FACE_IMAGE_NOT_FOUND') {
+          return res.status(404).json({ message: "Registered face image not found. Please register your face again.", error: err.message });
+        }
+        throw err;
+      }
       const form = new FormData();
       form.append("imageA", storedBuffer, "registered.jpg");
       form.append("imageB", live.buffer, live.originalname || "live.jpg");

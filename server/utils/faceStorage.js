@@ -84,5 +84,16 @@ export const readFaceImageFromDb = async (userId) => {
 
 export const readFaceImage = async (relativePath) => {
   const fullPath = path.join(process.cwd(), relativePath);
-  return fs.readFile(fullPath);
+  try {
+    // Check if file exists before reading
+    await fs.access(fullPath);
+    return await fs.readFile(fullPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      const error = new Error(`Face image file not found: ${fullPath}`);
+      error.code = 'FACE_IMAGE_NOT_FOUND';
+      throw error;
+    }
+    throw err;
+  }
 };

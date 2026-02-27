@@ -1,11 +1,12 @@
 import axios from "axios";
 import bcrypt from "bcryptjs";
-import express from "express";
+import express from "express";0
 import FormData from "form-data";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import pool, { getDbType } from "../config/dbPool.js";
 import { saveFaceImage, saveFaceImageToDb } from "../utils/faceStorage.js";
+
 import { createUser, findUserByEmail, updateUserFacePath, listUsers } from "../utils/userStore.js";
 
 const router = express.Router();
@@ -19,12 +20,15 @@ const getFaceServiceBaseUrl = () => {
 router.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
+    console.log(`[REGISTER] Attempt: name=${name}, email=${email}`);
     if (!name || !email || !password) {
+      console.warn(`[REGISTER] Missing fields: name=${name}, email=${email}, password=${!!password}`);
       return res.status(400).json({ message: "Missing fields" });
     }
 
     const existing = await findUserByEmail(email);
     if (existing) {
+      console.warn(`[REGISTER] Email already registered: ${email}`);
       return res.status(409).json({ message: "Email already registered" });
     }
 
@@ -32,6 +36,7 @@ router.post("/register", async (req, res) => {
     const adminEmail = (process.env.ADMIN_EMAIL || "").toLowerCase();
     const role = adminEmail && adminEmail === email.toLowerCase() ? "admin" : "user";
     const user = await createUser({ name, email, passwordHash, role });
+    console.log(`[REGISTER] User created: id=${user.id}, email=${user.email}, role=${user.role}`);
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -39,11 +44,13 @@ router.post("/register", async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    console.log(`[REGISTER] Success: id=${user.id}, email=${user.email}`);
     return res.status(201).json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err) {
+    console.error(`[REGISTER] Error:`, err);
     return res.status(500).json({ message: "Registration failed" });
   }
 });
@@ -122,31 +129,26 @@ router.post("/register-live", upload.single("image"), async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`[LOGIN] Attempt: email=${email}`);
     if (!email || !password) {
+      console.warn(`[LOGIN] Missing fields: email=${email}, password=${!!password}`);
       return res.status(400).json({ message: "Missing fields" });
     }
 
-    console.log(`🔑 Login attempt for: ${email}`);
     const user = await findUserByEmail(email);
     if (!user) {
-      console.log(`❌ User not found: ${email}`);
+      console.warn(`[LOGIN] User not found: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    console.log(`✅ User found: ${user.name} (${user.email})`);
-    console.log(`   passwordHash type: ${typeof user.passwordHash}`);
-    console.log(`   passwordHash length: ${user.passwordHash?.length || 'undefined'}`);
-    
     if (!user.passwordHash) {
-      console.error(`❌ CRITICAL: User passwordHash is missing!`);
-      console.log(`   User object keys:`, Object.keys(user));
-      console.log(`   User object:`, user);
+      console.error(`[LOGIN] CRITICAL: User passwordHash is missing! User:`, user);
       return res.status(500).json({ message: "Login failed - user data corrupted" });
     }
-    
+
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      console.log(`❌ Invalid password for: ${email}`);
+      console.warn(`[LOGIN] Invalid password for: ${email}`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -156,13 +158,13 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    console.log(`✅ Login successful: ${user.name}`);
+    console.log(`[LOGIN] Success: id=${user.id}, email=${user.email}`);
     return res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role }
     });
   } catch (err) {
-    console.error("❌ Login error:", err);
+    console.error(`[LOGIN] Error:`, err);
     return res.status(500).json({ message: "Login failed" });
   }
 });
